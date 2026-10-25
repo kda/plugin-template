@@ -1,13 +1,12 @@
 # Import StreamController modules
 from src.backend.PluginManager.ActionBase import ActionBase
 from src.backend.PluginManager.ActionCore import ActionCore
-#from src.backend.DeckManagement.DeckController import DeckController
-#from src.backend.PageManagement.Page import Page
-#from src.backend.PluginManager.PluginBase import PluginBase
-#from GtkHelper.GenerativeUI.SwitchRow import SwitchRow
+
+from loguru import logger as log
 
 # Import python modules
 import os
+import time
 
 # Import gtk modules - used for the config rows
 import gi
@@ -18,251 +17,248 @@ from gi.repository import Gtk, Adw
 from PIL import Image, ImageDraw
 from mpd import MPDClient
 
-class MpdProgress(ActionCore):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        #self.show_label_switch = SwitchRow(
-        #    action_core=self,
-        #    var_name="show_label",
-        #    default_value=False,
-        #    title="Show label",
-        #    on_change=self.on_show_label_changed
-        #)
-        self.mpdc = None
-        image_format = self.deck_controller.deck.key_image_format()
-        (self.image_width, self.image_height) = image_format['size']
-        
-    def on_ready(self) -> None:
-        icon_path = os.path.join(self.plugin_base.PATH, "assets", "info.png")
-        self.set_media(media_path=icon_path, size=0.50)
-        #if self.get_settings().get("show_label", False):
-        #    self.set_bottom_label("hello")
-        #else:
-        #    self.set_bottom_label("")
-        if self.mpdc is None:
-            self.mpdc = MPDClient()
+class MpdConnection:
+    _instance = None
+    _mpdc = None
+    _previousRunTime = 0.0
+    _previousRetval = (None, None)
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, host, port):
+        if hasattr(self, "_initialized"):
+            return
+
+        self._initialized = True
+        self._host = host
+        self._port = port
+
+    @classmethod
+    def reset_connection(cls, host, port):
+        if cls._instance is not None:
+            cls._instance._mpdc = None
+            cls._instance._host = host
+            cls._instance._port = port
+
+    def fetchState(self) -> None:
+        if (time.time() - self._previousRunTime) < 0.9:
+            return self._previousRetval
+        self._previousRunTime = time.time()
+        if self._mpdc is None:
+            self._mpdc = MPDClient()
             try:
                 # Add try-catch to handle lack of MPD
                 #mpdc.connect(args[0], args[1])
-                self.mpdc.connect("localhost", 6600)
+                self._mpdc.connect(self._host, self._port)
             except Exception as err:
                 print(f'Unexpected {err=}, {type(err)=}')
-                self.mpdc = None
-                return
+                self._mpdc = None
+                return self._previousRetval
 
         try:
-            mpdcStatus = self.mpdc.status()
+            mpdcStatus = self._mpdc.status()
             #print(f'mpdcStatus: {mpdcStatus}')
-            mpdcCurrentSong = self.mpdc.currentsong()
+            mpdcCurrentSong = self._mpdc.currentsong()
             #print(f'mpdcCurrentSong: {mpdcCurrentSong}')
         except Exception as err:
             print(f'Unexpected {err=}, {type(err)=}')
-            self.mpdc = None
+            self._mpdc = None
+            return self._previousRetval
+
+        self._previousRetval = (mpdcStatus, mpdcCurrentSong)
+        return self._previousRetval
+
+class MpdCore(ActionCore):
+    _instances = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._instances.append(self)
+        settings = self.plugin_base.get_settings()
+        self._mpdcon = MpdConnection(settings['mpd_host'], settings['mpd_port'])
+        image_format = self.deck_controller.deck.key_image_format()
+        (self._iconWidth, self._iconHeight) = image_format['size']
+        self._state = None
+
+    def on_tick(self) -> None:
+        self.on_ready()
+
+    def on_remove(self):
+        if self in self._instances:
+            self._instances.remove(self)
+        super().on_remove()
+
+    @classmethod
+    def global_settings_changed(cls, new_settings):
+        MpdConnection.reset_connection(new_settings['mpd_host'], new_settings['mpd_port'])
+        for instance in list(cls._instances):
+            instance.apply_new_settings(new_settings)
+
+    def apply_new_settings(self, settings):
+        pass
+
+#    def on_update(self) -> None:
+#        self._state = None
+#        super().on_update()
+
+    def _prep_image(self) -> (Image, ImageDraw):
+        image = Image.new("RGB", (self._iconWidth, self._iconHeight), "black")
+        return (image, ImageDraw.Draw(image))
+
+    def _render_image(self, content) -> None:
+        if content == self._state:
+#            log.info(f'content: {content} self._state: {self._state}')
             return
+        self._state = content
 
-        if set(['elapsed', 'duration', 'song', 'playlistlength']).issubset(mpdcStatus):
-            elapsedMinutes = int(float(mpdcStatus["elapsed"]) / 60)
-            elapsedSeconds = int(float(mpdcStatus["elapsed"]) % 60)
-            durationMinutes = int(float(mpdcStatus["duration"]) / 60)
-            durationSeconds = int(float(mpdcStatus["duration"]) % 60)
-            percent = int((float(mpdcStatus["elapsed"]) * 100) / float(mpdcStatus["duration"]))
-            songIndex = int(mpdcStatus['song']) + 1
-            playlistLength = int(mpdcStatus['playlistlength'])
-            #state = '{}={}:{:>02}\n{}:{:>02}\n{}%\n{} / {}'.format(mode, elapsedMinutes, elapsedSeconds, durationMinutes, durationSeconds, percent, songIndex, playlistLength)
-            state = '{}:{:>02}\n{}:{:>02}\n{}%\n{} / {}'.format(elapsedMinutes, elapsedSeconds, durationMinutes, durationSeconds, percent, songIndex, playlistLength)
-        else:
-            #state = f'{mode}={mpdcStatus["state"]}'
-            state = f'{mpdcStatus["state"]}'
-
-        #draw = ImageDraw.Draw(inputImage)
-        #width = inputImage.size[0]
-        #height = inputImage.size[1]
-        #draw.rectangle([0, 0, width, height], fill="black", outline="black")
-        image = Image.new("RGB", (self.image_width, self.image_height), "black")
-        draw = ImageDraw.Draw(image)
-
-
-        draw.text((self.image_width/2, self.image_height/2), text=state, fill='white', anchor='mm', align='center')
+        (image, draw) = self._prep_image()
+        (width, height) = (self._iconWidth, self._iconHeight)
+        allLines = []
+        for valueLine in content.splitlines():
+            textWidth = draw.textlength(valueLine)
+            lines = []
+            if textWidth > width:
+                valuePieces = valueLine.split(' ')
+                valuePieceIndex = 0
+                while valuePieceIndex < len(valuePieces):
+                    line = valuePieces[valuePieceIndex]
+                    valuePieceIndex += 1
+                    textWidth = draw.textlength(line)
+                    if textWidth > width:
+                        lines.append(line)
+                        continue
+                    while textWidth < width:
+                        if valuePieceIndex >= len(valuePieces):
+                            lines.append(line)
+                            line = ''
+                            break
+                        if len(line) > 0:
+                            line += ' '
+                        line += valuePieces[valuePieceIndex]
+                        valuePieceIndex += 1
+                        textWidth = draw.textlength(line)
+                    if len(line) > 0:
+                        line = line[:line.rfind(' ')]
+                        valuePieceIndex -= 1
+                        lines.append(line)
+                normalizedValue = '\n'.join(lines)
+            else:
+                normalizedValue = valueLine
+            allLines.append(normalizedValue)
+        allLinesMerged = '\n'.join(allLines)
+        #print(f'allLinesMerged: {allLinesMerged}')
+        draw.text((width/2, height/2), text=allLinesMerged, fill='white', anchor='mm', align='center')
+        log.info(f'rendered: content: {content}')
         self.set_media(image=image)
 
-    #def get_config_rows(self):
-    #    return self.get_generative_ui_widgets()
+class MpdProgress(MpdCore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         
-    #def on_show_label_changed(self, widget, new_value, old_value):
-    #    self.on_ready()  # redraw with the new setting
+    def on_ready(self) -> None:
+        (mpdcStatus, _) = self._mpdcon.fetchState()
+        state = '???'
+        if mpdcStatus is not None:
+            if set(['elapsed', 'duration', 'song', 'playlistlength']).issubset(mpdcStatus):
+                elapsedMinutes = int(float(mpdcStatus["elapsed"]) / 60)
+                elapsedSeconds = int(float(mpdcStatus["elapsed"]) % 60)
+                durationMinutes = int(float(mpdcStatus["duration"]) / 60)
+                durationSeconds = int(float(mpdcStatus["duration"]) % 60)
+                percent = int((float(mpdcStatus["elapsed"]) * 100) / float(mpdcStatus["duration"]))
+                songIndex = int(mpdcStatus['song']) + 1
+                playlistLength = int(mpdcStatus['playlistlength'])
+                state = '{}:{:>02}\n{}:{:>02}\n{}%\n{} / {}'.format(elapsedMinutes, elapsedSeconds, durationMinutes, durationSeconds, percent, songIndex, playlistLength)
+            elif 'state' in mpdcStatus:
+                state = f'{mpdcStatus["state"]}'
 
-    #def on_key_down(self) -> None:
-    #    print("Key down")
-    #
-    #def on_key_up(self) -> None:
-    #    print("Key up")
+        if state == self._state:
+            return
 
+        (image, draw) = self._prep_image()
+        draw.text((self._iconWidth/2, self._iconHeight/2), text=state, fill='white', anchor='mm', align='center')
+        self.set_media(image=image)
+        self._state = state
 
+class MpdAlbum(MpdCore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
+    def on_ready(self) -> None:
+        (_, mpdcCurrentSong) = self._mpdcon.fetchState()
+        value = 'album'
+        if mpdcCurrentSong is not None and 'album' in mpdcCurrentSong:
+            value = f'{mpdcCurrentSong["album"]}'
+        self._render_image(value)
 
-# import os
-# import time
-# 
-# from PIL import Image, ImageDraw
-# from mpd import MPDClient
-# from streamdeck_ui.config import DEFAULT_FONT
-# 
-# mpdc = None
-# previousRunTime = 0.0
-# previousState = 'unknown'
-# 
-# def detectState(args: list[str]) -> str:
-#     global mpdc
-#     global previousRunTime
-#     global previousState
-#     state = 'unknown'
-# 
-#     if mpdc is None:
-#         mpdc = MPDClient()
-#         try:
-#             # Add try-catch to handle lack of MPD
-#             mpdc.connect(args[0], args[1])
-#         except Exception as err:
-#             print(f'Unexpected {err=}, {type(err)=}')
-#             mpdc = None
-#             return previousState
-# 
-#     # prevent re-calculation too quick
-#     if (time.time() - previousRunTime) < 0.9:
-#         return previousState
-#     previousRunTime = time.time()
-# 
-#     try:
-#         mpdcStatus = mpdc.status()
-#         #print(f'mpdcStatus: {mpdcStatus}')
-#         mpdcCurrentSong = mpdc.currentsong()
-#         #print(f'mpdcCurrentSong: {mpdcCurrentSong}')
-#     except Exception as err:
-#         print(f'Unexpected {err=}, {type(err)=}')
-#         mpdc = None
-#         return previousState
-# 
-#     #if not set(['state', 'elapsed', 'duration']).issubset(mpdcStatus):
-#     if not set(['state']).issubset(mpdcStatus):
-#         print(f'Invalid mpdcStatus {mpdcStatus}')
-#         mpdc = None
-#         return previousState
-#     #if not set(['artist', 'album', 'track', 'title']).issubset(mpdcCurrentSong):
-#     #    print(f'Invalid mpdcCurrentSong {mpdcCurrentSong}')
-#     #    mpdc = None
-#     #    return previousState
-# 
-#     #previousRunTime = time.time()
-# 
-#     mode = args[2]
-#     state = f'{mode}={mode}'
-#     if mode == 'state':
-#         state = f'{mode}={mpdcStatus["state"]}'
-#     elif mode == 'artist':
-#         if 'artist' in mpdcCurrentSong:
-#             state = f'{mode}={mpdcCurrentSong["artist"]}'
-#     elif mode == 'album':
-#         if 'album' in mpdcCurrentSong:
-#             state = f'{mode}={mpdcCurrentSong["album"]}'
-#     elif mode == 'artist_album':
-#         if set(['artist', 'album']).issubset(mpdcCurrentSong):
-#             state = f'{mode}={mpdcCurrentSong["artist"]}\n\n{mpdcCurrentSong["album"]}'
-#     elif mode == 'song':
-#         if set(['track', 'title']).issubset(mpdcCurrentSong):
-#             state = f'{mode}={mpdcCurrentSong["track"]} - {mpdcCurrentSong["title"]}'
-#     elif mode == 'progress':
-#         if set(['elapsed', 'duration', 'song', 'playlistlength']).issubset(mpdcStatus):
-#             elapsedMinutes = int(float(mpdcStatus["elapsed"]) / 60)
-#             elapsedSeconds = int(float(mpdcStatus["elapsed"]) % 60)
-#             durationMinutes = int(float(mpdcStatus["duration"]) / 60)
-#             durationSeconds = int(float(mpdcStatus["duration"]) % 60)
-#             percent = int((float(mpdcStatus["elapsed"]) * 100) / float(mpdcStatus["duration"]))
-#             songIndex = int(mpdcStatus['song']) + 1
-#             playlistLength = int(mpdcStatus['playlistlength'])
-#             state = '{}={}:{:>02}\n{}:{:>02}\n{}%\n{} / {}'.format(mode, elapsedMinutes, elapsedSeconds, durationMinutes, durationSeconds, percent, songIndex, playlistLength)
-#         else:
-#             state = f'{mode}={mpdcStatus["state"]}'
-#     elif mode == 'cover':
-#         if 'file' in mpdcCurrentSong:
-#             basePath = os.path.join('/home/kda/hdmusic/', os.path.dirname(mpdcCurrentSong['file']))
-#             path = os.path.join(basePath, 'cover.jpg')
-#             if not os.path.isfile(path):
-#                 path = os.path.join(basePath, 'cover.png')
-#                 if not os.path.isfile(path):
-#                     path = os.path.join(basePath, 'cover.gif')
-#                     if not os.path.isfile(path):
-#                         path = ''
-#             state = f'{mode}={path}'
-#         else:
-#             state = f'{mode}='
-# 
-#     print(f'detectState: state={state}')
-#     previousState = state
-#     return state
-# 
-# def prepareImage(inputImage: Image, state: str) -> Image:
-#     if state is None:
-#         return inputImage
-#     index = state.find('=')
-#     if index < 1:
-#         return inputImage
-#     mode = (state[:index]).strip()
-#     value = (state[index+1:]).strip()
-# 
-#     draw = ImageDraw.Draw(inputImage)
-#     width = inputImage.size[0]
-#     height = inputImage.size[1]
-#     draw.rectangle([0, 0, width, height], fill="black", outline="black")
-#     if mode == 'state':
-#         if value == 'play':
-#             draw.rectangle([width/5, 0, (width/5)*2, height], fill='white', outline='white')
-#             draw.rectangle([(width/5) * 3, 0, (width/5)*4, height], fill='white', outline='white')
-#         else:
-#             draw.polygon([(0, 0), (inputImage.size[0], inputImage.size[1]/2), (0, inputImage.size[1])], fill='white', outline='white')
-#     elif mode == 'artist' or mode == 'album' or mode == 'song' or mode == 'artist_album':
-#         allLines = []
-#         for valueLine in value.splitlines():
-#             textWidth = draw.textlength(valueLine)
-#             lines = []
-#             if textWidth > width:
-#                 valuePieces = valueLine.split(' ')
-#                 valuePieceIndex = 0
-#                 while valuePieceIndex < len(valuePieces):
-#                     line = valuePieces[valuePieceIndex]
-#                     valuePieceIndex += 1
-#                     textWidth = draw.textlength(line)
-#                     if textWidth > width:
-#                         lines.append(line)
-#                         continue
-#                     while textWidth < width:
-#                         if valuePieceIndex >= len(valuePieces):
-#                             lines.append(line)
-#                             line = ''
-#                             break
-#                         if len(line) > 0:
-#                             line += ' '
-#                         line += valuePieces[valuePieceIndex]
-#                         valuePieceIndex += 1
-#                         textWidth = draw.textlength(line)
-#                     if len(line) > 0:
-#                         line = line[:line.rfind(' ')]
-#                         valuePieceIndex -= 1
-#                         lines.append(line)
-#                 normalizedValue = '\n'.join(lines)
-#             else:
-#                 normalizedValue = valueLine
-#             allLines.append(normalizedValue)
-#         allLinesMerged = '\n'.join(allLines)
-#         #print(f'allLinesMerged: {allLinesMerged}')
-#         draw.text((width/2, height/2), text=allLinesMerged, fill='white', anchor='mm', align='center')
-#     elif mode == 'progress':
-#         draw.text((width/2, height/2), text=value, fill='white', anchor='mm', align='center')
-#     elif mode == 'cover':
-#         if len(value) > 0:
-#             cover = Image.open(value)
-#             inputImage.paste(cover.resize((width, height)))
-#         else:
-#             draw.rectangle([width/4, height/4, (3 * width)/4, (3 * height)/4], fill='darkgrey', outline='grey')
-#             draw.text((width/2, height/2), text='cover', fill='black', anchor='mm', align='center')
-# 
-#     return inputImage
+class MpdArtist(MpdCore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def on_update(self) -> None:
+        (_, mpdcCurrentSong) = self._mpdcon.fetchState()
+        value = 'artist'
+        if mpdcCurrentSong is not None and 'artist' in mpdcCurrentSong:
+            value = f'{mpdcCurrentSong["artist"]}'
+        self._render_image(value)
+
+class MpdArtistAlbum(MpdCore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def on_ready(self) -> None:
+        (_, mpdcCurrentSong) = self._mpdcon.fetchState()
+        value = 'artist\n\nalbum'
+        if mpdcCurrentSong is not None and set(['artist', 'album']).issubset(mpdcCurrentSong):
+            value = f'{mpdcCurrentSong["artist"]}\n\n{mpdcCurrentSong["album"]}'
+        self._render_image(value)
+
+class MpdSong(MpdCore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def on_ready(self) -> None:
+        (_, mpdcCurrentSong) = self._mpdcon.fetchState()
+        value = 'song'
+        if mpdcCurrentSong is not None and set(['track', 'title']).issubset(mpdcCurrentSong):
+            value = f'{mpdcCurrentSong["track"]} - {mpdcCurrentSong["title"]}'
+        self._render_image(value)
+
+class MpdCover(MpdCore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        settings = self.plugin_base.get_settings()
+        self._music_directory = settings['music_directory']
+
+    def on_ready(self) -> None:
+        (_, mpdcCurrentSong) = self._mpdcon.fetchState()
+        path = ''
+        if mpdcCurrentSong is not None and 'file' in mpdcCurrentSong:
+            basePath = os.path.join(self._music_directory, os.path.dirname(mpdcCurrentSong['file']))
+            path = os.path.join(basePath, 'cover.jpg')
+            if not os.path.isfile(path):
+                path = os.path.join(basePath, 'cover.png')
+                if not os.path.isfile(path):
+                    path = os.path.join(basePath, 'cover.gif')
+                    if not os.path.isfile(path):
+                        path = ''
+
+        if path == self._state:
+            return
+
+        (image, draw) = self._prep_image()
+        if len(path) > 0:
+            cover = Image.open(path)
+            image.paste(cover.resize((self._iconWidth, self._iconHeight)))
+        else:
+            draw.rectangle([self._iconWidth/4, self._iconHeight/4, (3 * self._iconWidth)/4, (3 * self._iconHeight)/4], fill='darkgrey', outline='grey')
+            draw.text((self._iconWidth/2, self._iconHeight/2), text='cover', fill='black', anchor='mm', align='center')
+        self.set_media(image=image)
+        self._state = path
+
+    #def music_directory_updated(self, music_directory):
+    #    self._music_directory = music_directory
+    def apply_new_settings(self, settings):
+        self._music_directory = settings['music_directory']
