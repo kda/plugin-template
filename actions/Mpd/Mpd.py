@@ -190,7 +190,7 @@ class MpdAlbum(MpdCore):
         (_, mpdcCurrentSong) = self._mpdcon.fetchState()
         value = 'album'
         if mpdcCurrentSong is not None and 'album' in mpdcCurrentSong:
-            value = f'{mpdcCurrentSong["album"]}'
+            value = mpdcCurrentSong["album"]
         self._render_image(value)
 
 class MpdArtist(MpdCore):
@@ -201,7 +201,7 @@ class MpdArtist(MpdCore):
         (_, mpdcCurrentSong) = self._mpdcon.fetchState()
         value = 'artist'
         if mpdcCurrentSong is not None and 'artist' in mpdcCurrentSong:
-            value = f'{mpdcCurrentSong["artist"]}'
+            value = mpdcCurrentSong["artist"]
         self._render_image(value)
 
 class MpdArtistAlbum(MpdCore):
