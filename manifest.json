@@ -1,6 +1,7 @@
 {
-    "version": "",
+    "name": "mpd - Music Player Daemon",
+    "version": "0.0.1",
     "thumbnail": "",
-    "id": "",
-    "name": ""
+    "id": "net_birdbrain_mpd",
+    "minimum-app-version": "1.5.0"
 }

@@ -4,6 +4,7 @@ from src.backend.PluginManager.ActionHolder import ActionHolder
 
 # Import actions
 from .actions.SimpleAction.SimpleAction import SimpleAction
+from .actions.Mpd.Mpd import MpdProgress
 
 class PluginTemplate(PluginBase):
     def __init__(self):
@@ -17,6 +18,14 @@ class PluginTemplate(PluginBase):
             action_name = "Simple Action",
         )
         self.add_action_holder(self.simple_action_holder)
+
+        self.mpd_progress_holder = ActionHolder(
+            plugin_base = self,
+            action_base = MpdProgress,
+            action_id = "net_birdbrain_mpd::MpdProgress",
+            action_name = "Show Progress",
+        )
+        self.add_action_holder(self.mpd_progress_holder)
 
         # Register plugin
         self.register(
