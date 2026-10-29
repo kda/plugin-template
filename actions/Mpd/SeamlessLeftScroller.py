@@ -62,35 +62,36 @@ class SeamlessLeftScroller:
             # 6. Increment offset and instantly snap back when one complete loop finishes
             x_offset = (x_offset + scroll_speed) % self.single_width
             time.sleep(frame_delay)
-Use code with caution.
 
-Why this works perfectly for your plugin:
-
-• No Modulo Split Logic: You don't have to manually calculate split pieces or math fragments mid-loop.
-• Zero Overhead Rendering: The work of doubling and stitching happens only once during initialization. The rendering loop itself is reduced down to a light, single coordinate paste execution.
-• Flawless Infinite Wrap: Because the canvas resets exactly at self.single_width, the button layout loops perfectly without skipping a single pixel.
-If you want to implement this, let me know if you would like to handle dynamic text width resizing automatically during image creation so that the source image is always exactly as wide as your text layer!
-
-
-from PIL import Image, ImageDraw, ImageFont
-
-def on_ready(self):
-    button_grid_height = 72 # Match your layout target size
-    
-    # 1. Dynamically generate a wide canvas to contain your text or shapes
-    # Create an image wide enough (e.g., 300 pixels) to handle oversized text lines
-    dynamic_canvas = Image.new("RGBA", (300, button_grid_height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(dynamic_canvas)
-    
-    # 2. Draw your content (text, lines, status markers, etc.)
-    # Example: Drawing a long tracking string or status message
-    draw.text((10, 20), "SYSTEM MONITORING ACTIVE - OK", fill=(255, 255, 255, 255))
-    
-    # 3. Pass the in-memory PIL image directly to the scroller class
-    self.scroller = LeftScrollingDynamicImage(self, dynamic_canvas, button_size=button_grid_height)
-    self.scroller.start()
-
-def on_remove(self):
-    if hasattr(self, 'scroller'):
-        self.scroller.stop()
+#Use code with caution.
+#
+#Why this works perfectly for your plugin:
+#
+#• No Modulo Split Logic: You don't have to manually calculate split pieces or math fragments mid-loop.
+#• Zero Overhead Rendering: The work of doubling and stitching happens only once during initialization. The rendering loop itself is reduced down to a light, single coordinate paste execution.
+#• Flawless Infinite Wrap: Because the canvas resets exactly at self.single_width, the button layout loops perfectly without skipping a single pixel.
+#If you want to implement this, let me know if you would like to handle dynamic text width resizing automatically during image creation so that the source image is always exactly as wide as your text layer!
+#
+#
+#from PIL import Image, ImageDraw, ImageFont
+#
+#def on_ready(self):
+#    button_grid_height = 72 # Match your layout target size
+#    
+#    # 1. Dynamically generate a wide canvas to contain your text or shapes
+#    # Create an image wide enough (e.g., 300 pixels) to handle oversized text lines
+#    dynamic_canvas = Image.new("RGBA", (300, button_grid_height), (0, 0, 0, 0))
+#    draw = ImageDraw.Draw(dynamic_canvas)
+#    
+#    # 2. Draw your content (text, lines, status markers, etc.)
+#    # Example: Drawing a long tracking string or status message
+#    draw.text((10, 20), "SYSTEM MONITORING ACTIVE - OK", fill=(255, 255, 255, 255))
+#    
+#    # 3. Pass the in-memory PIL image directly to the scroller class
+#    self.scroller = LeftScrollingDynamicImage(self, dynamic_canvas, button_size=button_grid_height)
+#    self.scroller.start()
+#
+#def on_remove(self):
+#    if hasattr(self, 'scroller'):
+#        self.scroller.stop()
 

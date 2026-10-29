@@ -82,11 +82,16 @@ class MpdCore(ActionCore):
         image_format = self.deck_controller.deck.key_image_format()
         (self._iconWidth, self._iconHeight) = image_format['size']
         self._state = None
+        self._lastUpdate = 0.0
 
     def on_tick(self) -> None:
         self.on_ready()
 
+    def on_ready(self):
+        pass
+
     def on_remove(self):
+        self._state = None
         if self in self._instances:
             self._instances.remove(self)
         super().on_remove()
@@ -97,8 +102,8 @@ class MpdCore(ActionCore):
         for instance in list(cls._instances):
             instance.apply_new_settings(new_settings)
 
-    def apply_new_settings(self, settings):
-        pass
+#    def apply_new_settings(self, settings):
+#        pass
 
 #    def on_update(self) -> None:
 #        self._state = None
@@ -109,8 +114,8 @@ class MpdCore(ActionCore):
         return (image, ImageDraw.Draw(image))
 
     def _render_image(self, content) -> None:
-        if content == self._state:
-#            log.info(f'content: {content} self._state: {self._state}')
+        if content == self._state and (time.time() - self._lastUpdate) < 10.0:
+            #log.info(f'content: {content} self._state: {self._state}')
             return
         self._state = content
 
@@ -151,8 +156,9 @@ class MpdCore(ActionCore):
         allLinesMerged = '\n'.join(allLines)
         #print(f'allLinesMerged: {allLinesMerged}')
         draw.text((width/2, height/2), text=allLinesMerged, fill='white', anchor='mm', align='center')
-        log.info(f'rendered: content: {content}')
+        #log.info(f'rendered: content: {content}')
         self.set_media(image=image)
+        self._lastUpdate = time.time()
 
 class MpdProgress(MpdCore):
     def __init__(self, *args, **kwargs):
@@ -223,7 +229,7 @@ class MpdSong(MpdCore):
         (_, mpdcCurrentSong) = self._mpdcon.fetchState()
         value = 'song'
         if mpdcCurrentSong is not None and set(['track', 'title']).issubset(mpdcCurrentSong):
-            value = f'{mpdcCurrentSong["track"]} - {mpdcCurrentSong["title"]}'
+            value = f'{mpdcCurrentSong["track"]}\n{mpdcCurrentSong["title"]}'
         self._render_image(value)
 
 class MpdCover(MpdCore):
