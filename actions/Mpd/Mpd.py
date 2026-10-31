@@ -45,7 +45,7 @@ class MpdConnection:
             cls._instance._host = host
             cls._instance._port = port
 
-    def fetchState(self) -> (status, current_song):
+    def fetchState(self) -> (dict[str, str], dict[str, str]):
         if (time.time() - self._previousRunTime) < 0.9:
             return self._previousRetval
         self._previousRunTime = time.time()
@@ -310,6 +310,6 @@ class MpdPlayPause(MpdCore):
             return
 
         pause = 1 if mpdcStatus["state"] == 'play' else 0
-        log.info(f'pause: {pause}')
+        #log.info(f'pause: {pause}')
         self._mpdcon._mpdc.pause(pause)
         self.render_state('pause' if pause else 'play')
