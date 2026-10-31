@@ -102,8 +102,8 @@ class MpdCore(ActionCore):
         for instance in list(cls._instances):
             instance.apply_new_settings(new_settings)
 
-#    def apply_new_settings(self, settings):
-#        pass
+    def apply_new_settings(self, settings):
+        pass
 
 #    def on_update(self) -> None:
 #        self._state = None
