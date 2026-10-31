@@ -16,6 +16,7 @@ from .actions.Mpd.Mpd import MpdArtistAlbum
 from .actions.Mpd.Mpd import MpdCover
 from .actions.Mpd.Mpd import MpdProgress
 from .actions.Mpd.Mpd import MpdSong
+from .actions.Mpd.Mpd import MpdPlayPause
 
 class MpdPlugin(PluginBase):
     def __init__(self):
@@ -67,6 +68,14 @@ class MpdPlugin(PluginBase):
             action_base = MpdCover,
             action_id = "net_birdbrain_mpd::MpdCover",
             action_name = "Show Cover",
+        )
+        self.add_action_holder(self.mpd_cover_holder)
+
+        self.mpd_cover_holder = ActionHolder(
+            plugin_base = self,
+            action_base = MpdPlayPause,
+            action_id = "net_birdbrain_mpd::MpdPlayPause",
+            action_name = "Play / Pause Playback",
         )
         self.add_action_holder(self.mpd_cover_holder)
 
@@ -135,3 +144,4 @@ class MpdPlugin(PluginBase):
         MpdCover.global_settings_changed(new_settings)
         MpdProgress.global_settings_changed(new_settings)
         MpdSong.global_settings_changed(new_settings)
+        MpdPlayPause.global_settings_changed(new_settings)

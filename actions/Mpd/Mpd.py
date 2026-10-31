@@ -1,6 +1,8 @@
 # Import StreamController modules
 from src.backend.PluginManager.ActionBase import ActionBase
 from src.backend.PluginManager.ActionCore import ActionCore
+from src.backend.PluginManager.EventAssigner import EventAssigner
+from src.backend.DeckManagement.InputIdentifier import Input
 
 from loguru import logger as log
 
@@ -43,15 +45,13 @@ class MpdConnection:
             cls._instance._host = host
             cls._instance._port = port
 
-    def fetchState(self) -> None:
+    def fetchState(self) -> (status, current_song):
         if (time.time() - self._previousRunTime) < 0.9:
             return self._previousRetval
         self._previousRunTime = time.time()
         if self._mpdc is None:
             self._mpdc = MPDClient()
             try:
-                # Add try-catch to handle lack of MPD
-                #mpdc.connect(args[0], args[1])
                 self._mpdc.connect(self._host, self._port)
             except Exception as err:
                 print(f'Unexpected {err=}, {type(err)=}')
@@ -203,7 +203,7 @@ class MpdArtist(MpdCore):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def on_update(self) -> None:
+    def on_ready(self) -> None:
         (_, mpdcCurrentSong) = self._mpdcon.fetchState()
         value = 'artist'
         if mpdcCurrentSong is not None and 'artist' in mpdcCurrentSong:
@@ -264,7 +264,52 @@ class MpdCover(MpdCore):
         self.set_media(image=image)
         self._state = path
 
-    #def music_directory_updated(self, music_directory):
-    #    self._music_directory = music_directory
     def apply_new_settings(self, settings):
         self._music_directory = settings['music_directory']
+
+class MpdPlayPause(MpdCore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.add_event_assigner(EventAssigner(
+            id = "simple_action_pressed",
+            ui_label = "Pressed",
+            default_events = [Input.Key.Events.DOWN],
+            callback = self.on_key_down,
+        ))
+
+    def render_state(self, state) -> None:
+        (image, draw) = self._prep_image()
+        if state == 'play':
+            draw.rectangle([self._iconWidth/5, 0, (self._iconWidth/5)*2, self._iconHeight], fill='white', outline='white')
+            draw.rectangle([(self._iconWidth/5) * 3, 0, (self._iconWidth/5)*4, self._iconHeight], fill='white', outline='white')
+        else:
+            draw.polygon([(0, 0), (self._iconWidth, self._iconHeight/2), (0, self._iconHeight)], fill='white', outline='white')
+        self.set_media(image=image)
+        self._lastUpdate = time.time()
+        self._state = state
+
+    def on_ready(self) -> None:
+        (mpdcStatus, _) = self._mpdcon.fetchState()
+        state = '???'
+        if mpdcStatus is not None and 'state' in mpdcStatus:
+            state = mpdcStatus["state"]
+
+        if state == self._state and (time.time() - self._lastUpdate) < 1.0:
+            return
+
+        self.render_state(state)
+
+    def on_key_down(self, data) -> None:
+        (mpdcStatus, _) = self._mpdcon.fetchState()
+        if mpdcStatus is None:
+            log.info(f'mpdcStatus is None')
+            return
+        if 'state' not in mpdcStatus:
+            log.info(f'no "state" in mpdcStatus')
+            return
+
+        pause = 1 if mpdcStatus["state"] == 'play' else 0
+        log.info(f'pause: {pause}')
+        self._mpdcon._mpdc.pause(pause)
+        self.render_state('pause' if pause else 'play')
